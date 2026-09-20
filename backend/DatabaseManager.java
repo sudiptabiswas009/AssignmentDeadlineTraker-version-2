@@ -7,13 +7,17 @@ public class DatabaseManager {
     private static final String URL =
             "jdbc:mysql://localhost:3306/assignment_tracker";
 
-    private static final String USERNAME = "root";
+    private static final String USERNAME =
+            "root";
 
     private static final String PASSWORD =
-            "sqloo9@#A";
+            System.getenv().getOrDefault(
+                    "DB_PASSWORD",
+                    "YOUR_PASSWORD"
+            );
 
-
-    public static Connection getConnection() throws SQLException {
+    public static Connection getConnection()
+            throws SQLException {
 
         return DriverManager.getConnection(
                 URL,
