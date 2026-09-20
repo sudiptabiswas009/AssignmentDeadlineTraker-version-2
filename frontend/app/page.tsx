@@ -136,6 +136,10 @@ export default function Home() {
 
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
+  // ---------- Complete state ----------
+
+  const [completingId, setCompletingId] = useState<number | null>(null);
+
   // ---------- Form state ----------
 
   const [id, setId] = useState("");
@@ -381,6 +385,64 @@ export default function Home() {
 
     } finally {
       setDeletingId(null);
+    }
+  }
+
+  // =====================================================
+  // MARK AS COMPLETED
+  // =====================================================
+
+  async function handleComplete(
+    assignmentId: number
+  ) {
+
+    setCompletingId(assignmentId);
+
+    try {
+
+      const response = await fetch(
+        `${API_URL}/complete/${assignmentId}`,
+        {
+          method: "PATCH",
+        }
+      );
+
+      const data = await response
+        .json()
+        .catch(() => null);
+
+      if (!response.ok) {
+
+        throw new Error(
+          data?.error ??
+          `Server responded with ${response.status}`
+        );
+      }
+
+      setToast({
+        type: "success",
+        text:
+          data?.message ??
+          "Assignment marked as completed.",
+      });
+
+      reload();
+
+    } catch (error) {
+
+      console.error(
+        "Error completing assignment:",
+        error
+      );
+
+      setToast({
+        type: "error",
+        text:
+          "Failed to mark assignment as completed.",
+      });
+
+    } finally {
+      setCompletingId(null);
     }
   }
 
@@ -664,6 +726,9 @@ export default function Home() {
                     const isDeleting =
                       deletingId === assignment.id;
 
+                    const isCompleting =
+                      completingId === assignment.id;
+
                     return (
 
                       <li
@@ -724,9 +789,34 @@ export default function Home() {
 
                         </div>
 
-                        {/* ---------- DELETE BUTTON ---------- */}
+                        {/* ---------- ACTION BUTTONS ---------- */}
 
-                        <div className="mt-4 flex justify-end">
+                        <div className="mt-4 flex justify-end gap-2">
+
+                          {/* Mark as completed (only for pending) */}
+
+                          {!isDone && (
+
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleComplete(
+                                  assignment.id
+                                )
+                              }
+                              disabled={isCompleting}
+                              className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 transition hover:bg-emerald-100 hover:text-emerald-800 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+
+                              {isCompleting
+                                ? "Completing..."
+                                : "Mark as completed"}
+
+                            </button>
+
+                          )}
+
+                          {/* Delete */}
 
                           <button
                             type="button"
@@ -1078,4 +1168,3 @@ export default function Home() {
     </div>
   );
 }
-
