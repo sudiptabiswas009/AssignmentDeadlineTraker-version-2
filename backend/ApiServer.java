@@ -13,7 +13,7 @@ import java.util.regex.Pattern;
 
 public class ApiServer {
 
-    private static final String ALLOWED_ORIGIN = "http://localhost:3000";
+    private static final String ALLOWED_ORIGIN = "https://assignment-deadline-traker-version-tau.vercel.app";
 
     public static void main(String[] args) throws Exception {
 
