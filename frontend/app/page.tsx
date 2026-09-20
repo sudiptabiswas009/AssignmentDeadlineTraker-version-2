@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
 
-const API_URL = "https://apr-lat-fairly-decided.trycloudflare.com/api";
+const API_URL =  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080/api";
 
 type Assignment = {
   id: number;
