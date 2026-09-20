@@ -273,6 +273,12 @@ export default function Home() {
   return (
     // Explicit light colors so the page looks right even if the OS is in dark mode
     <div className="min-h-screen bg-slate-50 text-slate-900">
+      {/* ---------- CREDIT ---------- */}
+      <div className="mx-auto max-w-2xl px-4 pt-4 text-right text-xs text-slate-400">
+        Developed by{" "}
+        <span className="font-medium text-slate-500">Sudipta Biswas</span>
+      </div>
+
       <main className="mx-auto max-w-2xl px-4 py-10">
         {/* ---------- HEADER ---------- */}
         <header>
