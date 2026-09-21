@@ -890,6 +890,116 @@ function ConfirmModal({
   );
 }
 
+// 🔔 In-app deadline reminders: overdue, due today, and due within 3 days
+function DeadlineReminders({
+  assignments,
+  onOpen,
+}: {
+  assignments: Assignment[];
+  onOpen: (id: number) => void;
+}) {
+  const urgent = assignments
+    .filter((a) => !isDone(a) && daysLeft(a.deadline) <= 3)
+    .sort(
+      (a, b) =>
+        daysLeft(a.deadline) - daysLeft(b.deadline) ||
+        cmpDeadline(a, b)
+    );
+
+  if (urgent.length === 0) {
+    return (
+      <div className="mb-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+        <div className="flex items-start gap-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-lg">
+            ✓
+          </div>
+
+          <div>
+            <p className="font-semibold text-emerald-800">
+              No urgent deadlines
+            </p>
+            <p className="mt-0.5 text-sm text-emerald-700">
+              You&apos;re all caught up.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mb-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="mb-3 flex items-center gap-3">
+        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-100 text-lg">
+          🔔
+        </div>
+
+        <div>
+          <h2 className="font-semibold text-slate-900">
+            Deadline Reminders
+          </h2>
+          <p className="text-sm text-slate-500">
+            Assignments that need your attention
+          </p>
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        {urgent.map((assignment) => {
+          const days = daysLeft(assignment.deadline);
+
+          let label = "";
+
+          if (days < 0) {
+            label = `${Math.abs(days)} day${
+              Math.abs(days) === 1 ? "" : "s"
+            } overdue`;
+          } else if (days === 0) {
+            label = "Due today";
+          } else if (days === 1) {
+            label = "Due tomorrow";
+          } else {
+            label = `Due in ${days} days`;
+          }
+
+          const urgentStyle =
+            days <= 0
+              ? "border-red-200 bg-red-50 hover:bg-red-100"
+              : "border-amber-200 bg-amber-50 hover:bg-amber-100";
+
+          const labelStyle =
+            days <= 0 ? "text-red-700" : "text-amber-700";
+
+          return (
+            <button
+              key={assignment.id}
+              type="button"
+              onClick={() => onOpen(assignment.id)}
+              className={`flex w-full items-center justify-between rounded-xl border p-3 text-left transition ${urgentStyle}`}
+            >
+              <div className="min-w-0">
+                <p className="truncate font-medium text-slate-900">
+                  {assignment.title}
+                </p>
+
+                <p className="mt-0.5 text-sm text-slate-500">
+                  {assignment.subject}
+                </p>
+              </div>
+
+              <span
+                className={`ml-4 shrink-0 text-sm font-semibold ${labelStyle}`}
+              >
+                {label}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // =====================================================
 // PAGE
 // =====================================================
@@ -1279,6 +1389,14 @@ export default function Home() {
                 </button>
               ))}
             </div>
+
+            {/* Deadline reminders */}
+            {ready && (
+              <DeadlineReminders
+                assignments={assignments}
+                onOpen={setSelectedId}
+              />
+            )}
 
             {/* Search + sort */}
             <div className="mb-3 flex gap-2">
