@@ -15,7 +15,12 @@ type Assignment = {
 };
 
 type Tab = "view" | "add";
-type Filter = "All" | "Pending" | "Completed";
+type Filter =
+  | "All"
+  | "Pending"
+  | "Completed"
+  | "Overdue"
+  | "Due Today";
 type Toast = { type: "success" | "error"; text: string } | null;
 
 const FILTERS: Filter[] = ["All", "Pending", "Completed"];
@@ -124,9 +129,21 @@ export default function Home() {
 
   const [tab, setTab] = useState<Tab>("view");
   const [filter, setFilter] = useState<Filter>("All");
+  const [searchQuery, setSearchQuery] = useState("");
   const [toast, setToast] = useState<Toast>(null);
   const [selectedAssignment, setSelectedAssignment] =
     useState<Assignment | null>(null);
+
+  const [editingAssignment, setEditingAssignment] =
+    useState<Assignment | null>(null);
+
+  const [editTitle, setEditTitle] = useState("");
+  const [editSubject, setEditSubject] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editDeadline, setEditDeadline] = useState("");
+  const [editStatus, setEditStatus] = useState("Pending");
+  const [editDateError, setEditDateError] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
 
   // ---------- Data state ----------
 
@@ -453,6 +470,109 @@ export default function Home() {
   }
 
   // =====================================================
+  // EDIT ASSIGNMENT
+  // =====================================================
+
+  function startEditing(assignment: Assignment) {
+
+    setEditingAssignment(assignment);
+
+    setEditTitle(assignment.title);
+    setEditSubject(assignment.subject);
+    setEditDescription(assignment.description ?? "");
+    setEditDeadline(formatDate(assignment.deadline));
+    setEditStatus(assignment.status);
+
+    setEditDateError("");
+  }
+
+  async function handleEditSubmit(
+    e: FormEvent<HTMLFormElement>
+  ) {
+
+    e.preventDefault();
+
+    if (!editingAssignment) {
+      return;
+    }
+
+    if (!isValidDate(editDeadline)) {
+
+      setEditDateError(
+        "Enter a valid date as dd/mm/yyyy"
+      );
+
+      return;
+    }
+
+    setSavingEdit(true);
+
+    try {
+
+      const response = await fetch(
+        `${API_URL}/edit/${editingAssignment.id}`,
+        {
+          method: "PATCH",
+
+          headers: {
+            "Content-Type": "application/json",
+          },
+
+          body: JSON.stringify({
+            title: editTitle.trim(),
+            subject: editSubject.trim(),
+            description: editDescription.trim(),
+            deadline: toISO(editDeadline),
+            status: editStatus,
+          }),
+        }
+      );
+
+      const data = await response
+        .json()
+        .catch(() => null);
+
+      if (!response.ok) {
+
+        throw new Error(
+          data?.error ??
+          `Server responded with ${response.status}`
+        );
+      }
+
+      setToast({
+        type: "success",
+        text:
+          data?.message ??
+          "Assignment updated successfully.",
+      });
+
+      setEditingAssignment(null);
+      setSelectedAssignment(null);
+
+      reload();
+
+    }
+    catch (error) {
+
+      console.error(
+        "Error editing assignment:",
+        error
+      );
+
+      setToast({
+        type: "error",
+        text: "Failed to update assignment.",
+      });
+
+    }
+    finally {
+
+      setSavingEdit(false);
+    }
+  }
+
+  // =====================================================
   // DERIVED DATA
   // =====================================================
 
@@ -464,6 +584,20 @@ export default function Home() {
   const completed =
     assignments.length - pending;
 
+  const overdue =
+    assignments.filter(
+      (a) =>
+        a.status !== "Completed" &&
+        daysLeft(a.deadline) < 0
+    ).length;
+
+  const dueToday =
+    assignments.filter(
+      (a) =>
+        a.status !== "Completed" &&
+        daysLeft(a.deadline) === 0
+    ).length;
+
   // Next free ID
   const nextId =
     assignments.reduce(
@@ -474,13 +608,43 @@ export default function Home() {
   const visible = assignments
     .filter((a) => {
 
-      if (filter === "All") {
-        return true;
+      const days = daysLeft(a.deadline);
+
+      let matchesFilter = true;
+
+      if (filter === "Pending") {
+        matchesFilter =
+          a.status !== "Completed";
       }
 
-      return filter === "Completed"
-        ? a.status === "Completed"
-        : a.status !== "Completed";
+      if (filter === "Completed") {
+        matchesFilter =
+          a.status === "Completed";
+      }
+
+      if (filter === "Overdue") {
+        matchesFilter =
+          a.status !== "Completed" &&
+          days < 0;
+      }
+
+      if (filter === "Due Today") {
+        matchesFilter =
+          a.status !== "Completed" &&
+          days === 0;
+      }
+
+      const matchesSubject =
+        a.subject
+          .toLowerCase()
+          .includes(
+            searchQuery.trim().toLowerCase()
+          );
+
+      return (
+        matchesFilter &&
+        matchesSubject
+      );
     })
     .sort(
       (a, b) =>
@@ -493,16 +657,29 @@ export default function Home() {
 
   const stats = [
     {
-      label: "Total",
+      label: "Total Assignments",
       value: assignments.length,
+      filter: "All" as Filter,
     },
     {
       label: "Pending",
       value: pending,
+      filter: "Pending" as Filter,
     },
     {
       label: "Completed",
       value: completed,
+      filter: "Completed" as Filter,
+    },
+    {
+      label: "Overdue",
+      value: overdue,
+      filter: "Overdue" as Filter,
+    },
+    {
+      label: "Due Today",
+      value: dueToday,
+      filter: "Due Today" as Filter,
     },
   ];
 
@@ -591,27 +768,64 @@ export default function Home() {
 
             {/* Stats */}
 
-            <div className="mb-5 grid grid-cols-3 gap-3">
+            <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3">
 
-              {stats.map((stat) => (
+              {stats.map((stat) => {
 
-                <div
-                  key={stat.label}
-                  className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
-                >
+                const isActive =
+                  filter === stat.filter;
 
-                  <p className="text-2xl font-semibold text-slate-900">
-                    {stat.value}
-                  </p>
+                return (
 
-                  <p className="text-sm text-slate-500">
-                    {stat.label}
-                  </p>
+                  <button
+                    key={stat.label}
+                    type="button"
+                    onClick={() =>
+                      setFilter(stat.filter)
+                    }
+                    className={`rounded-2xl border p-4 text-left shadow-sm transition ${
+                      isActive
+                        ? "border-indigo-300 bg-indigo-50 ring-2 ring-indigo-100"
+                        : "border-slate-200 bg-white hover:border-indigo-200 hover:shadow-md"
+                    }`}
+                  >
 
-                </div>
+                    <p className="text-2xl font-semibold text-slate-900">
+                      {stat.value}
+                    </p>
 
-              ))}
+                    <p className="text-sm text-slate-500">
+                      {stat.label}
+                    </p>
 
+                  </button>
+
+                );
+
+              })}
+
+            </div>
+
+            {/* Search by Subject */}
+
+            <div className="mb-4">
+              <label
+                htmlFor="subject-search"
+                className="mb-1.5 block text-sm font-medium text-slate-700"
+              >
+                Search by subject
+              </label>
+
+              <input
+                id="subject-search"
+                type="text"
+                value={searchQuery}
+                onChange={(e) =>
+                  setSearchQuery(e.target.value)
+                }
+                placeholder="e.g. Java, DBMS"
+                className={inputStyle}
+              />
             </div>
 
             {/* Filters */}
@@ -1252,13 +1466,251 @@ export default function Home() {
 
             </div>
 
-            <button
-              type="button"
-              onClick={() => setSelectedAssignment(null)}
-              className="mt-6 w-full rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-indigo-700"
+            <div className="mt-6 grid grid-cols-2 gap-2">
+
+              <button
+                type="button"
+                onClick={() => {
+                  startEditing(selectedAssignment);
+                  setSelectedAssignment(null);
+                }}
+                className="rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2.5 text-sm font-medium text-indigo-700 transition hover:bg-indigo-100"
+              >
+                Edit
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSelectedAssignment(null)}
+                className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-indigo-700"
+              >
+                Close
+              </button>
+
+            </div>
+
+          </div>
+
+        </div>
+
+      )}
+
+      {/* ---------- EDIT ASSIGNMENT ---------- */}
+
+      {editingAssignment && (
+
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 px-4"
+          onClick={() => setEditingAssignment(null)}
+        >
+
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Edit assignment"
+            onClick={(e) => e.stopPropagation()}
+            className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-6 shadow-xl"
+          >
+
+            <p className="text-xs font-semibold uppercase tracking-widest text-indigo-600">
+              Edit Assignment
+            </p>
+
+            <h2 className="mt-1 text-xl font-bold text-slate-900">
+              Update assignment
+            </h2>
+
+            <form
+              onSubmit={handleEditSubmit}
+              className="mt-6 space-y-5"
             >
-              Close
-            </button>
+
+              {/* Title */}
+
+              <div>
+
+                <label
+                  htmlFor="edit-title"
+                  className="mb-1.5 block text-sm font-medium text-slate-700"
+                >
+                  Title
+                </label>
+
+                <input
+                  id="edit-title"
+                  type="text"
+                  required
+                  value={editTitle}
+                  onChange={(e) =>
+                    setEditTitle(e.target.value)
+                  }
+                  className={inputStyle}
+                />
+
+              </div>
+
+              {/* Subject */}
+
+              <div>
+
+                <label
+                  htmlFor="edit-subject"
+                  className="mb-1.5 block text-sm font-medium text-slate-700"
+                >
+                  Subject
+                </label>
+
+                <input
+                  id="edit-subject"
+                  type="text"
+                  required
+                  value={editSubject}
+                  onChange={(e) =>
+                    setEditSubject(e.target.value)
+                  }
+                  className={inputStyle}
+                />
+
+              </div>
+
+              {/* Description */}
+
+              <div>
+
+                <label
+                  htmlFor="edit-description"
+                  className="mb-1.5 block text-sm font-medium text-slate-700"
+                >
+                  Description
+                </label>
+
+                <textarea
+                  id="edit-description"
+                  value={editDescription}
+                  onChange={(e) =>
+                    setEditDescription(e.target.value)
+                  }
+                  rows={4}
+                  className={inputStyle}
+                />
+
+              </div>
+
+              {/* Deadline */}
+
+              <div>
+
+                <label
+                  htmlFor="edit-deadline"
+                  className="mb-1.5 block text-sm font-medium text-slate-700"
+                >
+                  Deadline
+                </label>
+
+                <input
+                  id="edit-deadline"
+                  type="text"
+                  inputMode="numeric"
+                  required
+                  maxLength={10}
+                  pattern="\d{2}/\d{2}/\d{4}"
+                  title="Use dd/mm/yyyy"
+                  value={editDeadline}
+                  onChange={(e) => {
+                    setEditDeadline(
+                      maskDate(e.target.value)
+                    );
+
+                    setEditDateError("");
+                  }}
+                  placeholder="dd/mm/yyyy"
+                  className={inputStyle}
+                />
+
+                {editDateError && (
+
+                  <p className="mt-1.5 text-sm text-red-600">
+                    {editDateError}
+                  </p>
+
+                )}
+
+              </div>
+
+              {/* Status */}
+
+              <fieldset>
+
+                <legend className="mb-1.5 text-sm font-medium text-slate-700">
+                  Status
+                </legend>
+
+                <div className="grid grid-cols-2 gap-2">
+
+                  {["Pending", "Completed"].map(
+                    (option) => (
+
+                      <label
+                        key={option}
+                        className={`cursor-pointer rounded-xl border px-4 py-2.5 text-center text-sm font-medium transition ${
+                          editStatus === option
+                            ? "border-indigo-600 bg-indigo-50 text-indigo-700"
+                            : "border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
+                        }`}
+                      >
+
+                        <input
+                          type="radio"
+                          name="edit-status"
+                          value={option}
+                          checked={
+                            editStatus === option
+                          }
+                          onChange={() =>
+                            setEditStatus(option)
+                          }
+                          className="sr-only"
+                        />
+
+                        {option}
+
+                      </label>
+
+                    )
+                  )}
+
+                </div>
+
+              </fieldset>
+
+              {/* Buttons */}
+
+              <div className="grid grid-cols-2 gap-2">
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setEditingAssignment(null)
+                  }
+                  disabled={savingEdit}
+                  className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="submit"
+                  disabled={savingEdit}
+                  className="rounded-xl bg-indigo-600 px-4 py-3 text-sm font-medium text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {savingEdit
+                    ? "Saving..."
+                    : "Save changes"}
+                </button>
+
+              </div>
+
+            </form>
 
           </div>
 
