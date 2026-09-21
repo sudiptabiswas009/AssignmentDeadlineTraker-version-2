@@ -9,6 +9,7 @@ type Assignment = {
   id: number;
   title: string;
   subject: string;
+  description: string;
   deadline: string;
   status: string;
 };
@@ -124,6 +125,8 @@ export default function Home() {
   const [tab, setTab] = useState<Tab>("view");
   const [filter, setFilter] = useState<Filter>("All");
   const [toast, setToast] = useState<Toast>(null);
+  const [selectedAssignment, setSelectedAssignment] =
+    useState<Assignment | null>(null);
 
   // ---------- Data state ----------
 
@@ -146,6 +149,7 @@ export default function Home() {
   const [idError, setIdError] = useState("");
   const [title, setTitle] = useState("");
   const [subject, setSubject] = useState("");
+  const [description, setDescription] = useState("");
   const [deadline, setDeadline] = useState("");
   const [dateError, setDateError] = useState("");
   const pickerRef = useRef<HTMLInputElement>(null);
@@ -269,6 +273,7 @@ export default function Home() {
             id: assignmentId,
             title: title.trim(),
             subject: subject.trim(),
+            description: description.trim(),
             deadline: toISO(deadline),
             status,
           }),
@@ -296,6 +301,7 @@ export default function Home() {
       setId("");
       setTitle("");
       setSubject("");
+      setDescription("");
       setDeadline("");
       setStatus("Pending");
 
@@ -733,7 +739,20 @@ export default function Home() {
 
                       <li
                         key={assignment.id}
-                        className={`rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:shadow-md ${
+                        role="button"
+                        tabIndex={0}
+                        onClick={() =>
+                          setSelectedAssignment(assignment)
+                        }
+                        onKeyDown={(e) => {
+                          if (e.target !== e.currentTarget) return;
+
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            setSelectedAssignment(assignment);
+                          }
+                        }}
+                        className={`cursor-pointer rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:shadow-md ${
                           isDone
                             ? "opacity-70"
                             : ""
@@ -799,11 +818,10 @@ export default function Home() {
 
                             <button
                               type="button"
-                              onClick={() =>
-                                handleComplete(
-                                  assignment.id
-                                )
-                              }
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleComplete(assignment.id);
+                              }}
                               disabled={isCompleting}
                               className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 transition hover:bg-emerald-100 hover:text-emerald-800 disabled:cursor-not-allowed disabled:opacity-60"
                             >
@@ -820,11 +838,10 @@ export default function Home() {
 
                           <button
                             type="button"
-                            onClick={() =>
-                              handleDelete(
-                                assignment.id
-                              )
-                            }
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDelete(assignment.id);
+                            }}
                             disabled={isDeleting}
                             className="rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-600 transition hover:bg-red-100 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-60"
                           >
@@ -971,6 +988,30 @@ export default function Home() {
                     setSubject(e.target.value)
                   }
                   placeholder="e.g. Java"
+                  className={inputStyle}
+                />
+
+              </div>
+
+              {/* Description */}
+
+              <div>
+
+                <label
+                  htmlFor="description"
+                  className="mb-1.5 block text-sm font-medium text-slate-700"
+                >
+                  Description
+                </label>
+
+                <textarea
+                  id="description"
+                  value={description}
+                  onChange={(e) =>
+                    setDescription(e.target.value)
+                  }
+                  placeholder="e.g. Complete the inheritance program and submit the code."
+                  rows={4}
                   className={inputStyle}
                 />
 
@@ -1147,6 +1188,83 @@ export default function Home() {
         )}
 
       </main>
+
+      {/* ---------- ASSIGNMENT DETAILS ---------- */}
+
+      {selectedAssignment && (
+
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 px-4"
+          onClick={() => setSelectedAssignment(null)}
+        >
+
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Assignment details"
+            onClick={(e) => e.stopPropagation()}
+            className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-6 shadow-xl"
+          >
+
+            <p className="text-xs font-semibold uppercase tracking-widest text-indigo-600">
+              Assignment Details
+            </p>
+
+            <h2 className="mt-1 break-words text-xl font-bold text-slate-900">
+              {selectedAssignment.title}
+            </h2>
+
+            <dl className="mt-5 grid grid-cols-[6rem_1fr] gap-x-4 gap-y-3 text-sm">
+
+              <dt className="text-slate-500">ID</dt>
+              <dd className="font-medium text-slate-900">
+                {selectedAssignment.id}
+              </dd>
+
+              <dt className="text-slate-500">Subject</dt>
+              <dd className="font-medium text-slate-900">
+                {selectedAssignment.subject}
+              </dd>
+
+              <dt className="text-slate-500">Deadline</dt>
+              <dd className="font-medium text-slate-900">
+                {formatDate(selectedAssignment.deadline)}
+              </dd>
+
+              <dt className="text-slate-500">Status</dt>
+              <dd className="font-medium text-slate-900">
+                {selectedAssignment.status}
+              </dd>
+
+            </dl>
+
+            <div className="mt-5">
+
+              <p className="text-sm text-slate-500">
+                Description
+              </p>
+
+              <p className="mt-1 whitespace-pre-wrap break-words text-sm text-slate-900">
+                {selectedAssignment.description?.trim()
+                  ? selectedAssignment.description
+                  : "No description added."}
+              </p>
+
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setSelectedAssignment(null)}
+              className="mt-6 w-full rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-indigo-700"
+            >
+              Close
+            </button>
+
+          </div>
+
+        </div>
+
+      )}
 
       {/* ---------- TOAST ---------- */}
 
