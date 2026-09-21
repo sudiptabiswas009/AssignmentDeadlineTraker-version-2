@@ -213,6 +213,87 @@ const centerOf = (e: ReactMouseEvent<HTMLElement>): Origin => {
 };
 
 // =====================================================
+// BROWSER NOTIFICATIONS
+// =====================================================
+
+const NOTIFY_KEY = "at-notifications"; // "on" once the user turned them on
+const SENT_KEY = "at-notified"; // keys of reminders already shown today
+
+type NotifPermission = NotificationPermission | "unsupported" | null;
+
+function readSent(): string[] {
+  try {
+    const list = JSON.parse(localStorage.getItem(SENT_KEY) ?? "[]");
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return [];
+  }
+}
+
+// Shows a pop-up for every pending assignment that is overdue, due today or due tomorrow.
+// Each assignment is announced once per day (and again when its stage changes).
+function sendDueNotifications(list: Assignment[], onClick: (id: number) => void) {
+  if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
+
+  const today = isoOf(new Date());
+  const sent = readSent().filter((k) => k.endsWith(`|${today}`)); // yesterday's keys are dropped
+  const fresh: { a: Assignment; days: number; text: string }[] = [];
+
+  for (const a of list) {
+    const days = daysLeft(a.deadline);
+    if (isDone(a) || days > 1) continue;
+
+    const stage = days < 0 ? "overdue" : days === 0 ? "today" : "tomorrow";
+    const key = `${a.id}|${stage}|${today}`;
+    if (sent.includes(key)) continue;
+
+    sent.push(key);
+    fresh.push({
+      a,
+      days,
+      text: days < 0 ? `overdue by ${-days} day${-days === 1 ? "" : "s"}` : days === 0 ? "due today" : "due tomorrow",
+    });
+  }
+
+  try {
+    localStorage.setItem(SENT_KEY, JSON.stringify(sent));
+  } catch {
+    /* storage unavailable: worst case the reminder repeats */
+  }
+
+  if (fresh.length === 0) return;
+  fresh.sort((x, y) => x.days - y.days);
+
+  try {
+    if (fresh.length <= 3) {
+      fresh.forEach(({ a, text }) => {
+        const n = new Notification(a.title, { body: `${a.subject} · ${text}`, tag: `assignment-${a.id}` });
+        n.onclick = () => {
+          window.focus();
+          onClick(a.id);
+          n.close();
+        };
+      });
+    } else {
+      const n = new Notification(`${fresh.length} assignments need attention`, {
+        body:
+          fresh
+            .slice(0, 3)
+            .map(({ a, text }) => `${a.title} (${text})`)
+            .join("\n") + `\n+ ${fresh.length - 3} more`,
+        tag: "assignment-summary",
+      });
+      n.onclick = () => {
+        window.focus();
+        n.close();
+      };
+    }
+  } catch {
+    /* some browsers (for example Chrome on Android) don't allow new Notification() */
+  }
+}
+
+// =====================================================
 // SMALL COMPONENTS
 // =====================================================
 
@@ -1000,6 +1081,63 @@ function DeadlineReminders({
   );
 }
 
+// Turn browser notifications on or off (the browser only lets a click ask for permission)
+function NotificationBar({
+  perm,
+  on,
+  onEnable,
+  onDisable,
+}: {
+  perm: NotifPermission;
+  on: boolean;
+  onEnable: () => void;
+  onDisable: () => void;
+}) {
+  if (perm === null) return null;
+
+  const box = "-mt-2 mb-5 flex flex-wrap items-center justify-between gap-2 rounded-xl border px-4 py-3 text-sm";
+  const button = "shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold transition";
+
+  if (perm === "unsupported") {
+    return (
+      <div className={`${box} border-slate-200 bg-white text-slate-500`}>
+        This browser doesn&apos;t support notifications.
+      </div>
+    );
+  }
+
+  if (perm === "denied") {
+    return (
+      <div className={`${box} border-amber-200 bg-amber-50 text-amber-800`}>
+        Notifications are blocked. Allow them in your browser&apos;s site settings to get reminders.
+      </div>
+    );
+  }
+
+  if (perm === "granted" && on) {
+    return (
+      <div className={`${box} border-emerald-200 bg-emerald-50 text-emerald-800`}>
+        <span>
+          🔔 Notifications are on. You&apos;ll get a pop-up for overdue, due-today and due-tomorrow assignments while this
+          page is open.
+        </span>
+        <button type="button" onClick={onDisable} className={`${button} bg-white text-emerald-700 ring-1 ring-emerald-200 hover:bg-emerald-100`}>
+          Turn off
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`${box} border-slate-200 bg-white text-slate-600`}>
+      <span>🔔 Get a browser pop-up when a deadline is near.</span>
+      <button type="button" onClick={onEnable} className={`${button} bg-indigo-600 text-white hover:bg-indigo-700`}>
+        Turn on notifications
+      </button>
+    </div>
+  );
+}
+
 // =====================================================
 // PAGE
 // =====================================================
@@ -1015,6 +1153,8 @@ export default function Home() {
   const [cal, setCal] = useState(() => ({ y: new Date().getFullYear(), m: new Date().getMonth() }));
   const [calDay, setCalDay] = useState<string | null>(null);
   const [toast, setToast] = useState<Toast>(null);
+  const [notifPerm, setNotifPerm] = useState<NotifPermission>(null); // null until we know (avoids SSR mismatch)
+  const [notifOn, setNotifOn] = useState(false);
 
   // ---------- Data state ----------
   const [assignments, setAssignments] = useState<Assignment[]>([]);
@@ -1077,6 +1217,39 @@ export default function Home() {
     return () => clearTimeout(timer);
   }, [toast]);
 
+  // Learn the browser's notification permission once the page is open
+  useEffect(() => {
+    if (typeof Notification === "undefined") {
+      setNotifPerm("unsupported");
+      return;
+    }
+    setNotifPerm(Notification.permission);
+    try {
+      setNotifOn(localStorage.getItem(NOTIFY_KEY) === "on" && Notification.permission === "granted");
+    } catch {
+      setNotifOn(false);
+    }
+  }, []);
+
+  // Automatic reminders: check now, every minute, and whenever the tab becomes visible again
+  useEffect(() => {
+    if (!notifOn || notifPerm !== "granted" || loading || loadError) return;
+
+    const run = () => sendDueNotifications(assignments, setSelectedId);
+    run();
+
+    const timer = setInterval(run, 60_000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") run();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [notifOn, notifPerm, loading, loadError, assignments]);
+
   // Escape closes the top-most popup
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -1089,6 +1262,40 @@ export default function Home() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [completeId, deleteId, edit, selectedId]);
+
+  // ---------- Browser notifications on/off ----------
+  async function enableNotifications() {
+    if (typeof Notification === "undefined") return;
+
+    const permission = await Notification.requestPermission();
+    setNotifPerm(permission);
+    if (permission !== "granted") return;
+
+    try {
+      localStorage.setItem(NOTIFY_KEY, "on");
+    } catch {
+      /* ignore */
+    }
+    setNotifOn(true);
+
+    try {
+      const hello = new Notification("Notifications are on", {
+        body: "You'll get a pop-up when a deadline is near.",
+      });
+      hello.onclick = () => window.focus();
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function disableNotifications() {
+    try {
+      localStorage.setItem(NOTIFY_KEY, "off");
+    } catch {
+      /* ignore */
+    }
+    setNotifOn(false);
+  }
 
   // ---------- Add assignment ----------
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
@@ -1392,10 +1599,19 @@ export default function Home() {
 
             {/* Deadline reminders */}
             {ready && (
-              <DeadlineReminders
-                assignments={assignments}
-                onOpen={setSelectedId}
-              />
+              <>
+                <DeadlineReminders
+                  assignments={assignments}
+                  onOpen={setSelectedId}
+                />
+
+                <NotificationBar
+                  perm={notifPerm}
+                  on={notifOn}
+                  onEnable={enableNotifications}
+                  onDisable={disableNotifications}
+                />
+              </>
             )}
 
             {/* Search + sort */}
