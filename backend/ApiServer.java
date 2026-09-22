@@ -53,6 +53,12 @@ public class ApiServer {
                 ApiServer::handleComplete
         );
 
+        // PATCH /api/edit/{id}
+        server.createContext(
+                "/api/edit",
+                ApiServer::handleEdit
+        );
+
         server.start();
 
         System.out.println(
@@ -165,11 +171,9 @@ public class ApiServer {
             return;
         }
 
-        String path =
-                exchange.getRequestURI().getPath();
+        String path = exchange.getRequestURI().getPath();
 
-        String prefix =
-                "/api/delete/";
+        String prefix = "/api/delete/";
 
         if (!path.startsWith(prefix)) {
             sendJson(
@@ -180,13 +184,11 @@ public class ApiServer {
             return;
         }
 
-        String idText =
-                path.substring(prefix.length());
+        String idText = path.substring(prefix.length());
 
         try {
 
-            int id =
-                    Integer.parseInt(idText);
+            int id = Integer.parseInt(idText);
 
             deleteAssignment(exchange, id);
 
@@ -382,6 +384,205 @@ public class ApiServer {
     }
 
     // =========================================
+    // PATCH /api/edit/{id}
+    // =========================================
+
+    private static void handleEdit(
+            HttpExchange exchange
+    ) throws IOException {
+
+        addCorsHeaders(exchange);
+
+        if (exchange.getRequestMethod().equalsIgnoreCase("OPTIONS")) {
+            handlePreflight(exchange);
+            return;
+        }
+
+        if (!exchange.getRequestMethod().equalsIgnoreCase("PATCH")) {
+            sendJson(
+                    exchange,
+                    405,
+                    "{\"error\":\"Method not allowed\"}"
+            );
+            return;
+        }
+
+        String path =
+                exchange.getRequestURI().getPath();
+
+        String prefix =
+                "/api/edit/";
+
+        if (!path.startsWith(prefix)) {
+            sendJson(
+                    exchange,
+                    400,
+                    "{\"error\":\"Assignment ID is required\"}"
+            );
+            return;
+        }
+
+        String idText =
+                path.substring(prefix.length());
+
+        try {
+
+            int id =
+                    Integer.parseInt(idText);
+
+            editAssignment(exchange, id);
+
+        }
+        catch (NumberFormatException e) {
+
+            sendJson(
+                    exchange,
+                    400,
+                    "{\"error\":\"Invalid assignment ID\"}"
+            );
+        }
+    }
+
+    // =========================================
+    // EDIT ASSIGNMENT
+    // =========================================
+
+    private static void editAssignment(
+            HttpExchange exchange,
+            int id
+    ) throws IOException {
+
+        String body =
+                readRequestBody(exchange);
+
+        try {
+
+            String title =
+                    extractJsonValue(
+                            body,
+                            "title"
+                    );
+
+            String subject =
+                    extractJsonValue(
+                            body,
+                            "subject"
+                    );
+
+            String description =
+                    extractJsonValue(
+                            body,
+                            "description"
+                    );
+
+            String deadline =
+                    extractJsonValue(
+                            body,
+                            "deadline"
+                    );
+
+            String status =
+                    extractJsonValue(
+                            body,
+                            "status"
+                    );
+
+            if (
+                    title == null ||
+                    subject == null ||
+                    deadline == null ||
+                    status == null
+            ) {
+
+                sendJson(
+                        exchange,
+                        400,
+                        "{\"error\":\"Missing required fields\"}"
+                );
+
+                return;
+            }
+
+            String sql =
+                    "UPDATE assignments " +
+                    "SET title = ?, " +
+                    "subject = ?, " +
+                    "description = ?, " +
+                    "deadline = ?, " +
+                    "status = ? " +
+                    "WHERE id = ?";
+
+            try (
+                    Connection connection =
+                            DatabaseManager.getConnection();
+
+                    PreparedStatement statement =
+                            connection.prepareStatement(sql)
+            ) {
+
+                statement.setString(1, title);
+
+                statement.setString(2, subject);
+
+                statement.setString(3, description);
+
+                statement.setDate(
+                        4,
+                        java.sql.Date.valueOf(deadline)
+                );
+
+                statement.setString(5, status);
+
+                statement.setInt(6, id);
+
+                int rows =
+                        statement.executeUpdate();
+
+                if (rows > 0) {
+
+                    sendJson(
+                            exchange,
+                            200,
+                            "{\"message\":\"Assignment updated successfully\"}"
+                    );
+
+                }
+                else {
+
+                    sendJson(
+                            exchange,
+                            404,
+                            "{\"error\":\"Assignment not found\"}"
+                    );
+                }
+            }
+
+        }
+        catch (IllegalArgumentException e) {
+
+            sendJson(
+                    exchange,
+                    400,
+                    "{\"error\":\"Invalid deadline format\"}"
+            );
+
+        }
+        catch (SQLException e) {
+
+            System.out.println(
+                    "Database error: " +
+                    e.getMessage()
+            );
+
+            sendJson(
+                    exchange,
+                    500,
+                    "{\"error\":\"Database error\"}"
+            );
+        }
+    }
+
+    // =========================================
     // CORS
     // =========================================
 
@@ -485,6 +686,14 @@ public class ApiServer {
                         .append(
                                 escapeJson(
                                         result.getString("subject")
+                                )
+                        )
+                        .append("\",");
+
+                json.append("\"description\":\"")
+                        .append(
+                                escapeJson(
+                                        result.getString("description")
                                 )
                         )
                         .append("\",");
@@ -667,6 +876,12 @@ public class ApiServer {
                             "subject"
                     );
 
+            String description =
+                    extractJsonValue(
+                            body,
+                            "description"
+                    );
+
             String deadline =
                     extractJsonValue(
                             body,
@@ -697,8 +912,8 @@ public class ApiServer {
 
             String sql =
                     "INSERT INTO assignments " +
-                    "(id, title, subject, deadline, status) " +
-                    "VALUES (?, ?, ?, ?, ?)";
+                    "(id, title, subject, description, deadline, status) " +
+                    "VALUES (?, ?, ?, ?, ?, ?)";
 
             try (
                     Connection connection =
@@ -708,32 +923,20 @@ public class ApiServer {
                             connection.prepareStatement(sql)
             ) {
 
-                statement.setInt(
-                        1,
-                        id
-                );
+                statement.setInt(1, id);
 
-                statement.setString(
-                        2,
-                        title
-                );
+                statement.setString(2, title);
 
-                statement.setString(
-                        3,
-                        subject
-                );
+                statement.setString(3, subject);
+
+                statement.setString(4, description);
 
                 statement.setDate(
-                        4,
-                        java.sql.Date.valueOf(
-                                deadline
-                        )
+                        5,
+                        java.sql.Date.valueOf(deadline)
                 );
 
-                statement.setString(
-                        5,
-                        status
-                );
+                statement.setString(6, status);
 
                 statement.executeUpdate();
 
