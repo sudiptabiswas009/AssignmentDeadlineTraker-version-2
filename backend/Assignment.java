@@ -5,14 +5,23 @@ public class Assignment {
     private String subject;
     private String deadline;
     private String status;
+    private String description;
 
     // Constructor
-    public Assignment(int id, String title, String subject, String deadline, String status) {
+    public Assignment(
+            int id,
+            String title,
+            String subject,
+            String deadline,
+            String status,
+            String description
+    ) {
         this.id = id;
         this.title = title;
         this.subject = subject;
         this.deadline = deadline;
         this.status = status;
+        this.description = description;
     }
 
     // Getter and Setter for ID
@@ -60,6 +69,15 @@ public class Assignment {
         this.status = status;
     }
 
+    // Getter and Setter for Description
+    public String getDescription() {
+        return description;
+    }
+
+    public void setDescription(String description) {
+        this.description = description;
+    }
+
     // Display Assignment
     public void display() {
         System.out.println("ID = " + id);
@@ -67,5 +85,6 @@ public class Assignment {
         System.out.println("Subject = " + subject);
         System.out.println("Deadline = " + deadline);
         System.out.println("Status = " + status);
+        System.out.println("Description = " + description);
     }
 }
