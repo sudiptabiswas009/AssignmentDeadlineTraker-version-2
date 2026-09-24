@@ -24,6 +24,13 @@ type Assignment = {
   status: string;
 };
 
+type User = {
+  uid: string;
+  name: string;
+  department: string;
+  semester: number;
+};
+
 type Tab = "view" | "add";
 type Filter = "All" | "Pending" | "Completed" | "Overdue" | "Due Today";
 type SortKey = "soonest" | "latest" | "subject" | "newest";
@@ -151,12 +158,26 @@ function matchesFilter(a: Assignment, filter: Filter) {
   return true;
 }
 
-// One helper for every backend call (throws on any error response)
-async function api<T = unknown>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_URL}${path}`, init);
+// Error that remembers the HTTP status (401 = missing / expired login)
+class ApiError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
+}
+
+// One helper for every backend call (throws on any error response).
+// Pass the login token and it is sent as "Authorization: Bearer <token>".
+async function api<T = unknown>(path: string, init?: RequestInit, token?: string | null): Promise<T> {
+  const headers = new Headers(init?.headers);
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+
+  const res = await fetch(`${API_URL}${path}`, { ...init, headers });
   const data = await res.json().catch(() => null);
 
-  if (!res.ok) throw new Error(data?.error ?? `Server responded with ${res.status}`);
+  if (!res.ok) throw new ApiError(data?.error ?? `Server responded with ${res.status}`, res.status);
   return data as T;
 }
 
@@ -1139,10 +1160,187 @@ function NotificationBar({
 }
 
 // =====================================================
+// LOGIN / SIGNUP SCREEN
+// =====================================================
+
+type AuthMode = "login" | "signup";
+
+function AuthScreen({
+  mode,
+  setMode,
+  onLogin,
+  onSignup,
+  loading,
+  error,
+}: {
+  mode: AuthMode;
+  setMode: (mode: AuthMode) => void;
+  onLogin: (uid: string, name: string, password: string) => void;
+  onSignup: (uid: string, name: string, department: string, semester: string, password: string) => void;
+  loading: boolean;
+  error: string;
+}) {
+  const [uid, setUid] = useState("");
+  const [name, setName] = useState("");
+  const [department, setDepartment] = useState("");
+  const [semester, setSemester] = useState("");
+  const [password, setPassword] = useState("");
+
+  const isSignup = mode === "signup";
+
+  // UID and name carry over between the two forms; the password never does
+  useEffect(() => setPassword(""), [mode]);
+
+  function handleSubmit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+
+    const cleanUid = uid.trim();
+    const cleanName = name.trim();
+
+    if (isSignup) onSignup(cleanUid, cleanName, department.trim(), semester, password);
+    else onLogin(cleanUid, cleanName, password);
+  }
+
+  return (
+    <div
+      className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-10 text-slate-900"
+      style={{ backgroundImage: "linear-gradient(to bottom, #eef2ff, #f8fafc 40%)" }}
+    >
+      <main className="w-full max-w-md">
+        <header className="mb-6 text-center">
+          <h1 className="text-3xl font-bold tracking-tight text-slate-900">Assignment Tracker</h1>
+          <p className="mt-1 text-slate-500">
+            {isSignup ? "Create an account to keep your own assignments" : "Log in to see your assignments"}
+          </p>
+        </header>
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div role="tablist" className="mb-6 grid grid-cols-2 gap-1 rounded-2xl bg-slate-200/70 p-1">
+            {(
+              [
+                ["login", "Log in"],
+                ["signup", "Sign up"],
+              ] as [AuthMode, string][]
+            ).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                role="tab"
+                aria-selected={mode === key}
+                onClick={() => setMode(key)}
+                className={`rounded-xl px-4 py-2.5 text-sm font-medium transition ${
+                  mode === key ? "bg-white text-slate-900 shadow-sm" : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <Field label="UID" id="auth-uid">
+              <input
+                id="auth-uid"
+                type="text"
+                required
+                autoFocus
+                autoComplete="username"
+                value={uid}
+                onChange={(e) => setUid(e.target.value)}
+                placeholder="e.g. 25BCS13590"
+                className={inputStyle}
+              />
+            </Field>
+
+            <Field label="Name" id="auth-name">
+              <input
+                id="auth-name"
+                type="text"
+                required
+                autoComplete="name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Your full name"
+                className={inputStyle}
+              />
+            </Field>
+
+            {isSignup && (
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-[1fr_7rem]">
+                <Field label="Department" id="auth-department">
+                  <input
+                    id="auth-department"
+                    type="text"
+                    required
+                    value={department}
+                    onChange={(e) => setDepartment(e.target.value)}
+                    placeholder="e.g. CSE"
+                    className={inputStyle}
+                  />
+                </Field>
+
+                <Field label="Semester" id="auth-semester">
+                  <input
+                    id="auth-semester"
+                    type="number"
+                    inputMode="numeric"
+                    min={1}
+                    max={12}
+                    required
+                    value={semester}
+                    onChange={(e) => setSemester(e.target.value)}
+                    placeholder="e.g. 3"
+                    className={inputStyle}
+                  />
+                </Field>
+              </div>
+            )}
+
+            <Field label="Password" id="auth-password">
+              <input
+                id="auth-password"
+                type="password"
+                required
+                autoComplete={isSignup ? "new-password" : "current-password"}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className={inputStyle}
+              />
+            </Field>
+
+            {error && (
+              <p role="alert" className="rounded-xl bg-red-50 px-3.5 py-2.5 text-sm text-red-700 ring-1 ring-inset ring-red-200">
+                {error}
+              </p>
+            )}
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full rounded-xl bg-indigo-600 px-4 py-3 font-medium text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {loading ? (isSignup ? "Creating account..." : "Logging in...") : isSignup ? "Create account" : "Log in"}
+            </button>
+          </form>
+        </div>
+      </main>
+    </div>
+  );
+}
+
+// =====================================================
 // PAGE
 // =====================================================
 
 export default function Home() {
+  // ---------- Authentication ----------
+  const [token, setToken] = useState<string | null>(null);
+  const [user, setUser] = useState<User | null>(null);
+  const [authReady, setAuthReady] = useState(false); // true once localStorage has been checked
+  const [authMode, setAuthMode] = useState<"login" | "signup">("login");
+  const [authLoading, setAuthLoading] = useState(false);
+  const [authError, setAuthError] = useState("");
+
   // ---------- UI state ----------
   const [tab, setTab] = useState<Tab>("view");
   const [view, setView] = useState<View>("list");
@@ -1186,11 +1384,32 @@ export default function Home() {
   const reload = () => setReloadKey((k) => k + 1); // refreshes quietly, no skeleton flash
   const byId = (id: number | null) => assignments.find((a) => a.id === id) ?? null;
 
-  // ---------- Get all assignments ----------
+  // ---------- Restore the saved login when the page opens ----------
   useEffect(() => {
+    try {
+      const savedToken = localStorage.getItem("assignment_token");
+      const savedUser = localStorage.getItem("assignment_user");
+
+      if (savedToken && savedUser) {
+        const parsedUser: User = JSON.parse(savedUser); // parse first, so a bad value never half-logs-in
+        setToken(savedToken);
+        setUser(parsedUser);
+      }
+    } catch {
+      localStorage.removeItem("assignment_token");
+      localStorage.removeItem("assignment_user");
+    }
+
+    setAuthReady(true);
+  }, []);
+
+  // ---------- Get all assignments (only once we are logged in) ----------
+  useEffect(() => {
+    if (!token) return;
+
     let cancelled = false;
 
-    api<Assignment[]>("/assignments")
+    api<Assignment[]>("/assignments", undefined, token)
       .then((data) => {
         if (!Array.isArray(data)) throw new Error("Unexpected response");
         if (cancelled) return;
@@ -1199,7 +1418,14 @@ export default function Home() {
       })
       .catch((error) => {
         console.error("Error fetching assignments:", error);
-        if (!cancelled) setLoadError(true);
+        if (cancelled) return;
+
+        // Expired / invalid session (e.g. the server restarted) -> back to logged out
+        if (error instanceof ApiError && error.status === 401) {
+          handleLogout();
+          return;
+        }
+        setLoadError(true);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -1208,7 +1434,7 @@ export default function Home() {
     return () => {
       cancelled = true;
     };
-  }, [reloadKey]);
+  }, [token, reloadKey]);
 
   // Auto-hide the toast (longer when it offers Undo)
   useEffect(() => {
@@ -1297,6 +1523,72 @@ export default function Home() {
     setNotifOn(false);
   }
 
+  // ---------- Authentication ----------
+  async function handleLogin(uid: string, name: string, password: string) {
+    setAuthLoading(true);
+    setAuthError("");
+
+    try {
+      const data = await api<{ message: string; token: string; user: User }>(
+        "/login",
+        jsonPost("POST", { uid, name, password })
+      );
+
+      localStorage.setItem("assignment_token", data.token);
+      localStorage.setItem("assignment_user", JSON.stringify(data.user));
+
+      setToken(data.token);
+      setUser(data.user);
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : "Login failed");
+    } finally {
+      setAuthLoading(false);
+    }
+  }
+
+  async function handleSignup(uid: string, name: string, department: string, semester: string, password: string) {
+    setAuthLoading(true);
+    setAuthError("");
+
+    try {
+      await api(
+        "/signup",
+        jsonPost("POST", {
+          uid,
+          name,
+          department,
+          semester: Number(semester),
+          password,
+        })
+      );
+
+      setAuthMode("login");
+      setAuthError("");
+      setToast({ type: "success", text: "Account created. Please login." });
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : "Signup failed");
+    } finally {
+      setAuthLoading(false);
+    }
+  }
+
+  function handleLogout() {
+    localStorage.removeItem("assignment_token");
+    localStorage.removeItem("assignment_user");
+
+    setToken(null);
+    setUser(null);
+    setAuthMode("login");
+    setAuthError("");
+    setTab("view");
+
+    // Don't leave the previous user's data in memory for the next person who logs in
+    setAssignments([]);
+    setLoading(true);
+    setLoadError(false);
+    setLastDeleted(null);
+  }
+
   // ---------- Add assignment ----------
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -1326,7 +1618,8 @@ export default function Home() {
           description: form.description.trim(),
           deadline: toISO(form.deadline), // backend/MySQL expects yyyy-mm-dd
           status: form.status,
-        })
+        }),
+        token
       );
 
       setToast({ type: "success", text: data?.message ?? "Assignment added." });
@@ -1349,7 +1642,7 @@ export default function Home() {
     setCompleting(true);
 
     try {
-      const data = await api<{ message?: string }>(`/complete/${id}`, { method: "PATCH" });
+      const data = await api<{ message?: string }>(`/complete/${id}`, { method: "PATCH" }, token);
 
       setCompleteId(null);
       setToast({ type: "success", text: data?.message ?? "Assignment marked as completed." });
@@ -1370,7 +1663,7 @@ export default function Home() {
     setDeleting(true);
 
     try {
-      const data = await api<{ message?: string }>(`/delete/${id}`, { method: "DELETE" });
+      const data = await api<{ message?: string }>(`/delete/${id}`, { method: "DELETE" }, token);
 
       setLastDeleted(target);
       setDeleteId(null);
@@ -1401,7 +1694,8 @@ export default function Home() {
           description: a.description ?? "",
           deadline: toISO(a.deadline),
           status: a.status,
-        })
+        }),
+        token
       );
 
       setLastDeleted(null);
@@ -1446,7 +1740,8 @@ export default function Home() {
           description: edit.description.trim(),
           deadline: toISO(edit.deadline),
           status: edit.status,
-        })
+        }),
+        token
       );
 
       setToast({ type: "success", text: data?.message ?? "Assignment updated successfully." });
@@ -1514,6 +1809,50 @@ export default function Home() {
       return { y: d.getFullYear(), m: d.getMonth() };
     });
 
+  const toastView =
+    toast && (
+      <div
+        role="status"
+        className={`at-pop fixed inset-x-4 bottom-6 z-[70] mx-auto flex w-fit max-w-sm items-center gap-4 rounded-xl px-5 py-3 text-sm font-medium text-white shadow-lg ${
+          toast.type === "success" ? "bg-emerald-600" : "bg-red-600"
+        }`}
+      >
+        <span>{toast.text}</span>
+
+        {toast.undo && lastDeleted && (
+          <button
+            type="button"
+            onClick={handleUndo}
+            className="rounded-lg bg-white/20 px-3 py-1 text-xs font-semibold transition hover:bg-white/30"
+          >
+            Undo
+          </button>
+        )}
+      </div>
+    );
+
+  // ---------- Login gate (all hooks are above, so returning early here is safe) ----------
+  if (!authReady) return null; // still checking localStorage
+
+  if (!token) {
+    return (
+      <>
+        <AuthScreen
+          mode={authMode}
+          setMode={(mode) => {
+            setAuthMode(mode);
+            setAuthError("");
+          }}
+          onLogin={handleLogin}
+          onSignup={handleSignup}
+          loading={authLoading}
+          error={authError}
+        />
+        {toastView}
+      </>
+    );
+  }
+
   // ---------- UI ----------
   return (
     // Explicit light colors so the page looks right even if the OS is in dark mode
@@ -1540,7 +1879,24 @@ export default function Home() {
             <p className="mt-1 text-slate-500">Manage your assignments and deadlines</p>
           </div>
 
-          <ProgressRing pct={assignments.length ? completed / assignments.length : 0} />
+          <div className="flex shrink-0 items-center gap-4">
+            <div className="text-right">
+              {user && (
+                <p className="max-w-[9rem] truncate text-sm text-slate-600">
+                  Hi, <span className="font-medium text-slate-900">{user.name}</span>
+                </p>
+              )}
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="mt-1 rounded-lg bg-slate-100 px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-slate-200"
+              >
+                Log out
+              </button>
+            </div>
+
+            <ProgressRing pct={assignments.length ? completed / assignments.length : 0} />
+          </div>
         </header>
 
         {/* Tabs */}
@@ -1979,26 +2335,7 @@ export default function Home() {
       )}
 
       {/* ---------- TOAST ---------- */}
-      {toast && (
-        <div
-          role="status"
-          className={`at-pop fixed inset-x-4 bottom-6 z-[70] mx-auto flex w-fit max-w-sm items-center gap-4 rounded-xl px-5 py-3 text-sm font-medium text-white shadow-lg ${
-            toast.type === "success" ? "bg-emerald-600" : "bg-red-600"
-          }`}
-        >
-          <span>{toast.text}</span>
-
-          {toast.undo && lastDeleted && (
-            <button
-              type="button"
-              onClick={handleUndo}
-              className="rounded-lg bg-white/20 px-3 py-1 text-xs font-semibold transition hover:bg-white/30"
-            >
-              Undo
-            </button>
-          )}
-        </div>
-      )}
+      {toastView}
     </div>
   );
 }
