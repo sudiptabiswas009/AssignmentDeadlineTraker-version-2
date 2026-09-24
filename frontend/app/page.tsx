@@ -1175,7 +1175,7 @@ function AuthScreen({
 }: {
   mode: AuthMode;
   setMode: (mode: AuthMode) => void;
-  onLogin: (uid: string, name: string, password: string) => void;
+  onLogin: (uid: string, password: string) => void;
   onSignup: (uid: string, name: string, department: string, semester: string, password: string) => void;
   loading: boolean;
   error: string;
@@ -1188,17 +1188,16 @@ function AuthScreen({
 
   const isSignup = mode === "signup";
 
-  // UID and name carry over between the two forms; the password never does
+  // The UID carries over between the two forms; the password never does
   useEffect(() => setPassword(""), [mode]);
 
   function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
 
     const cleanUid = uid.trim();
-    const cleanName = name.trim();
 
-    if (isSignup) onSignup(cleanUid, cleanName, department.trim(), semester, password);
-    else onLogin(cleanUid, cleanName, password);
+    if (isSignup) onSignup(cleanUid, name.trim(), department.trim(), semester, password);
+    else onLogin(cleanUid, password);
   }
 
   return (
@@ -1252,18 +1251,20 @@ function AuthScreen({
               />
             </Field>
 
-            <Field label="Name" id="auth-name">
-              <input
-                id="auth-name"
-                type="text"
-                required
-                autoComplete="name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Your full name"
-                className={inputStyle}
-              />
-            </Field>
+            {isSignup && (
+              <Field label="Name" id="auth-name">
+                <input
+                  id="auth-name"
+                  type="text"
+                  required
+                  autoComplete="name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Your full name"
+                  className={inputStyle}
+                />
+              </Field>
+            )}
 
             {isSignup && (
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-[1fr_7rem]">
@@ -1524,14 +1525,14 @@ export default function Home() {
   }
 
   // ---------- Authentication ----------
-  async function handleLogin(uid: string, name: string, password: string) {
+  async function handleLogin(uid: string, password: string) {
     setAuthLoading(true);
     setAuthError("");
 
     try {
       const data = await api<{ message: string; token: string; user: User }>(
         "/login",
-        jsonPost("POST", { uid, name, password })
+        jsonPost("POST", { uid, password })
       );
 
       localStorage.setItem("assignment_token", data.token);
