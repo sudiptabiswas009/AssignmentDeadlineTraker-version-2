@@ -1558,7 +1558,7 @@ export default function Home() {
           uid,
           name,
           department,
-          semester: Number(semester),
+          semester: semester,
           password,
         })
       );
