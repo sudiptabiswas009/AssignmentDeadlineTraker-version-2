@@ -1613,7 +1613,7 @@ export default function Home() {
       const data = await api<{ message?: string }>(
         "/add",
         jsonPost("POST", {
-          id: assignmentId,
+          id: String(assignmentId),
           title: form.title.trim(),
           subject: form.subject.trim(),
           description: form.description.trim(),
@@ -1692,7 +1692,7 @@ export default function Home() {
       await api(
         "/add",
         jsonPost("POST", {
-          id: a.id,
+          id: String(a.id),
           title: a.title,
           subject: a.subject,
           description: a.description ?? "",
