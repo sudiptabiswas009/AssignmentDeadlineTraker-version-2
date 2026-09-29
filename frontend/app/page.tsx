@@ -1632,7 +1632,10 @@ export default function Home() {
       reload();
     } catch (error) {
       console.error("Error adding assignment:", error);
-      setToast({ type: "error", text: "Failed to add assignment. Is the server running?" });
+      setToast({
+        type: "error",
+        text: error instanceof Error ? error.message : "Failed to add assignment.",
+      });
     } finally {
       setSubmitting(false);
     }
